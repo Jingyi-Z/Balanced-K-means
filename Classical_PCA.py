@@ -7,6 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
+from scipy.linalg import eig
+from matplotlib.ticker import MaxNLocator
+import time
+
+
+
 
 # download iris data and read it into a dataframe
 url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'
@@ -18,7 +24,7 @@ data = data.values
 N = len(data)   # Number of data points
 M = len(data[0]) # Dimension of data
 K = 3           # Number of attributes
-N_iter = 12     # Number of iterations
+N_iter = 100     # Maximum number of iterations
 
 T = np.zeros((K*N,N_iter+1)) # Cluster labels
 C = np.zeros((K,M,N_iter+1)) # Cluster center
@@ -27,6 +33,27 @@ l = 1e-1 # Constraint coefficient
 # For Iris, l_opt ~1e-1
 n_k = np.zeros((K,N_iter+1)) # Cluster size
 obj_value = np.zeros((1,N_iter+1)) # Value of objective function
+
+
+# Perform PCA on original data to visualize the results
+mean_data = sum(data)/float(len(data))
+cov_data = np.cov(np.transpose(data))
+l_data, U_data = eig(cov_data)
+L_data = np.diag(l_data)
+M_data = 2       # Dimension of data after PCA
+Z_data = np.zeros((N,M_data))
+for i in range(M_data):
+    for j in range(N):
+        Z_data[j,i] = np.dot((data[j,:]-mean_data),U_data[:,i])
+n = int(N/K)
+for i in range(0,n):        
+    plt.scatter(Z_data[i,0],Z_data[i,1],c='red')
+    plt.scatter(Z_data[i+n,0],Z_data[i+n,1],c='green')
+    plt.scatter(Z_data[i+2*n,0],Z_data[i+2*n,1],c='blue')
+    plt.xlabel("1st significant component")
+    plt.ylabel("2nd significant component")
+    plt.title("Classification Labels")
+plt.show()
 
 
 def dis(C):    # Sum of Square distance
@@ -56,6 +83,8 @@ def obj(C,T):  # Objective function
             sum += T[i*K+j]*D[i,j]
     return sum
 
+
+
 # Initializataion n_iter = 0
 # Randomly assign K cluster centers
 C_index = np.random.randint(0,N-1,K)
@@ -70,7 +99,22 @@ for i in range (N):
             T[i*K+j,0] = 1  
 n_k[:,0] = count(T[:,0])
 obj_value[:,0] = obj(C[:,:,0],T[:,0])
+'''
+# Plot cluster result: Iris only
+for i in range(N):
+        if (T[i*K+0,0] == 1):
+            plt.scatter(Z_data[i,0],Z_data[i,1],c='red')
+        elif (T[i*K+1,0] == 1):
+            plt.scatter(Z_data[i,0],Z_data[i,1],c='green')
+        elif (T[i*K+2,0] == 1):
+            plt.scatter(Z_data[i,0],Z_data[i,1],c='blue')        
+plt.xlabel("1st significant component")
+plt.ylabel("2nd significant component")
+plt.title("Epoch: 0")
+plt.show()
+'''
 
+start = time.time()
 # Assignment: Integer Programming
 # Define the solver IPOPT
 opt_ipopt = pyo.SolverFactory('ipopt')
@@ -121,7 +165,55 @@ for n_iter in range(1,N_iter+1,1):
             C[j,:,n_iter] = sum_Tih_xi/sum_Tih
         else:
             C[j,:,n_iter] = C[j,:,n_iter-1]
+    
+    '''
+    # Plot cluster result: Iris only
+    for i in range(N):
+            if (T[i*K+0,n_iter] == 1):
+                plt.scatter(Z_data[i,0],Z_data[i,1],c='red')
+            elif (T[i*K+1,n_iter] == 1):
+                plt.scatter(Z_data[i,0],Z_data[i,1],c='green')
+            elif (T[i*K+2,n_iter] == 1):
+                plt.scatter(Z_data[i,0],Z_data[i,1],c='blue')        
+    plt.xlabel("1st significant component")
+    plt.ylabel("2nd significant component")
+    print("Epoch: ", n_iter)
+    plt.show()
+    '''
+    
+    # If no change, break
+    if (obj_value[0,n_iter] == obj_value[0,n_iter-1]):
+        print("Epochs needed for convergence: ", n_iter-1)
+        break
 
+    # Balance constraint check
+    if (np.linalg.norm(n_k[:,n_iter]-np.ones((K,1))*N/K)<0.01):
+        print("Balance Contraint MET")
+        constr_ = 1
+    else:
+        print("Balance Constraint UNSATISFIED")
+        constr_ = 0
+
+end = time.time()
+time_ = end-start
+
+
+# Plot objective function value
+plt.plot(range(0,n_iter),obj_value[0,0:n_iter],c='black') 
+plt.scatter(range(0,n_iter),obj_value[0,0:n_iter],c='blue')
+plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+plt.xlabel("Epoch")
+plt.ylabel("Objective Function Value")
+
+# Export Results to csv file
+import csv
+
+with open(r'log.csv', 'a', newline='') as csvfile:
+    fieldnames = ['Obj Value','Epoch','Time','Constraint']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writerow({'Obj Value':obj_value[0,n_iter-1], 'Epoch':n_iter-1,'Time':time_,'Constraint':constr_})
+
+'''
 # Compare clustering result to the labeled data
 T_true = np.zeros((N*K))
 T_true[0:150:3]=1;
@@ -133,3 +225,4 @@ for i in range (M):
     for j in range(K):
         Actual_C[j,i]=np.mean(data[(50*j):(50*j+49),i])
 Min_obj_value = obj(Actual_C,T_true)
+'''
